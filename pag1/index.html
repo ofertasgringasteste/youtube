@@ -439,7 +439,7 @@ document.addEventListener('DOMContentLoaded', function() {
     animation: slideOffToLeft 1.5s linear forwards;
   }
 
-  /* Definição da animação */
+  /* Definição da animação sincronizada com o popup */
   @keyframes slideOffToLeft {
     /* No início (0%), a linha está na sua posição normal e totalmente visível */
     from {
@@ -453,11 +453,229 @@ document.addEventListener('DOMContentLoaded', function() {
       opacity: 0;
     }
   }
+
+  /* Garantir que popups fechem suavemente */
+  .elementor-popup-modal {
+    transition: opacity 0.3s ease-out, visibility 0.3s ease-out !important;
+  }
+  
+  .elementor-popup-modal.elementor-popup-modal--hide {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  /* Overlay também deve fechar suavemente */
+  .elementor-popup-modal__overlay {
+    transition: opacity 0.3s ease-out !important;
+  }
 </style>				</div>
 					</div>
 				</div>
 				</div>
 					<script>
+				// Sistema avançado de controle de popups com timer automático e fluxo fluido
+				document.addEventListener('DOMContentLoaded', function() {
+					let popupTimer = null;
+					let currentPopupId = null;
+					
+					// Função para fechar popup automaticamente com callback
+					function autoClosePopup(popupId, delay = 1500, callback = null) {
+						// Limpa timer anterior se existir
+						if (popupTimer) {
+							clearTimeout(popupTimer);
+						}
+						
+						currentPopupId = popupId;
+						
+						popupTimer = setTimeout(() => {
+							// Tenta fechar o popup usando múltiplos métodos
+							closePopupByMultipleMethods(popupId);
+							
+							// Executa callback se fornecido
+							if (callback && typeof callback === 'function') {
+								setTimeout(callback, 100);
+							}
+							
+							currentPopupId = null;
+						}, delay);
+					}
+
+					// Função robusta para fechar popup usando múltiplos métodos
+					function closePopupByMultipleMethods(popupId) {
+						// Método 1: Elementor API
+						if (window.elementorFrontend && window.elementorFrontend.modules && window.elementorFrontend.modules.popup) {
+							try {
+								window.elementorFrontend.modules.popup.closePopup({}, null);
+							} catch (e) {
+								console.log('Método 1 falhou:', e);
+							}
+						}
+
+						// Método 2: Manipulação direta do DOM
+						const popup = document.querySelector(`[data-elementor-id="${popupId}"].elementor-popup-modal`);
+						if (popup) {
+							popup.style.display = 'none';
+							popup.classList.remove('elementor-popup-modal--show');
+							popup.classList.add('elementor-popup-modal--hide');
+						}
+
+						// Método 3: Remove classes do body
+						document.body.classList.remove(`elementor-popup-modal-${popupId}`);
+						document.body.classList.remove('elementor-popup-modal-show');
+
+						// Método 4: Remove overlays
+						const overlays = document.querySelectorAll('.elementor-popup-modal__overlay');
+						overlays.forEach(overlay => {
+							overlay.style.display = 'none';
+							overlay.remove();
+						});
+
+						// Método 5: Simula clique no botão de fechar se existir
+						const closeButton = document.querySelector('.elementor-popup-modal__close-button, .dialog-close-button');
+						if (closeButton) {
+							closeButton.click();
+						}
+
+						// Método 6: Força remoção completa após um delay
+						setTimeout(() => {
+							const remainingPopups = document.querySelectorAll(`[data-elementor-id="${popupId}"].elementor-popup-modal`);
+							remainingPopups.forEach(p => {
+								if (p.parentNode) {
+									p.parentNode.removeChild(p);
+								}
+							});
+						}, 50);
+					}
+
+					// Monitora cliques em botões que abrem popups
+					document.addEventListener('click', function(e) {
+						const link = e.target.closest('a[href*="popup:open"]');
+						if (link) {
+							const href = link.getAttribute('href');
+							
+							// Extrai o ID do popup da URL
+							try {
+								const settings = href.match(/settings%3D([^&]+)/);
+								if (settings) {
+									const decoded = decodeURIComponent(settings[1]);
+									const popupData = JSON.parse(atob(decoded));
+									if (popupData.id) {
+										// Agenda o fechamento automático
+										autoClosePopup(popupData.id, 1500, function() {
+											console.log(`Popup ${popupData.id} fechado automaticamente`);
+										});
+									}
+								}
+							} catch (error) {
+								console.log('Erro ao processar popup:', error);
+							}
+						}
+					});
+
+					// Observer para detectar popups que aparecem no DOM
+					const popupObserver = new MutationObserver(function(mutations) {
+						mutations.forEach(function(mutation) {
+							mutation.addedNodes.forEach(function(node) {
+								if (node.nodeType === 1) {
+									// Verifica se é um popup
+									if (node.classList && node.classList.contains('elementor-popup-modal')) {
+										const popupId = node.getAttribute('data-elementor-id');
+										if (popupId && !currentPopupId) {
+											console.log(`Popup ${popupId} detectado, agendando fechamento`);
+											autoClosePopup(popupId, 1500);
+										}
+									}
+									
+									// Verifica se contém popups filhos
+									const childPopups = node.querySelectorAll && node.querySelectorAll('.elementor-popup-modal');
+									if (childPopups) {
+										childPopups.forEach(childPopup => {
+											const popupId = childPopup.getAttribute('data-elementor-id');
+											if (popupId && !currentPopupId) {
+												console.log(`Popup filho ${popupId} detectado, agendando fechamento`);
+												autoClosePopup(popupId, 1500);
+											}
+										});
+									}
+								}
+							});
+						});
+					});
+
+					// Inicia o observer
+					popupObserver.observe(document.body, {
+						childList: true,
+						subtree: true
+					});
+
+					// Força fechamento de popups existentes após carregamento
+					setTimeout(() => {
+						const existingPopups = document.querySelectorAll('.elementor-popup-modal');
+						existingPopups.forEach(popup => {
+							const popupId = popup.getAttribute('data-elementor-id');
+							if (popupId && !currentPopupId) {
+								console.log(`Popup existente ${popupId} encontrado, agendando fechamento`);
+								autoClosePopup(popupId, 1500);
+							}
+						});
+					}, 500);
+
+					// Função de limpeza global para garantir que não há popups órfãos
+					function cleanupOrphanedPopups() {
+						const allPopups = document.querySelectorAll('.elementor-popup-modal, .elementor-popup-modal__overlay');
+						allPopups.forEach(element => {
+							if (element.style.display !== 'none') {
+								element.style.display = 'none';
+							}
+						});
+						
+						// Limpa classes do body
+						document.body.className = document.body.className.replace(/elementor-popup-modal-\w+/g, '');
+					}
+
+					// Executa limpeza periodicamente
+					setInterval(cleanupOrphanedPopups, 3000);
+
+					// Limpeza ao sair da página
+					window.addEventListener('beforeunload', cleanupOrphanedPopups);
+
+					// Função para garantir que o Elementor está pronto
+					function waitForElementor(callback) {
+						if (window.elementorFrontend && window.elementorFrontend.isEditMode !== undefined) {
+							callback();
+						} else {
+							setTimeout(() => waitForElementor(callback), 100);
+						}
+					}
+
+					// Inicializa quando o Elementor estiver pronto
+					waitForElementor(function() {
+						console.log('Sistema de popup automático inicializado com sucesso');
+						
+						// Hook adicional para interceptar abertura de popups
+						if (window.elementorFrontend.hooks) {
+							window.elementorFrontend.hooks.addAction('frontend/element_ready/global', function($scope) {
+								const popupTriggers = $scope.find('a[href*="popup:open"]');
+								popupTriggers.each(function() {
+									const $trigger = $(this);
+									$trigger.on('click', function() {
+										setTimeout(() => {
+											const openPopup = document.querySelector('.elementor-popup-modal.elementor-popup-modal--show');
+											if (openPopup) {
+												const popupId = openPopup.getAttribute('data-elementor-id');
+												if (popupId) {
+													autoClosePopup(popupId, 1500);
+												}
+											}
+										}, 100);
+									});
+								});
+							});
+						}
+					});
+				});
+
 				const lazyloadRunObserver = () => {
 					const lazyloadBackgrounds = document.querySelectorAll( `.e-con.e-parent:not(.e-lazyloaded)` );
 					const lazyloadBackgroundObserver = new IntersectionObserver( ( entries ) => {
